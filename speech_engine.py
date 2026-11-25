@@ -53,6 +53,9 @@ GRAMMAR = json.dumps(
         "led leds lead leads let red ed lid lit lad",
         "l el e ee d dee",
         "one won two to too three tree free",
+        # Hesitations: give Vosk somewhere to put "um"/"hmm" so it doesn't
+        # force them into real command words (e.g. "to" = LED 2).
+        "um umm uh uhh hmm hm mm mmm er erm ah eh huh",
         "[unk]",
     ]
 )
