@@ -35,7 +35,10 @@ async function fetchStatus() {
   }
 }
 
+let isBusy = false;
+
 async function sendVoiceCommand() {
+  isBusy = true;
   setStatus("processing", "Listening & transcribing…");
   transcriptText.textContent = "…";
 
@@ -53,6 +56,8 @@ async function sendVoiceCommand() {
     }
   } catch (err) {
     setStatus("error", "Request failed — is the server running?");
+  } finally {
+    isBusy = false;
   }
 }
 
@@ -61,7 +66,7 @@ async function sendVoiceCommand() {
 let isRecording = false;
 
 talkBtn.addEventListener("pointerdown", (e) => {
-  if (isRecording) return;
+  if (isRecording || isBusy) return;
   isRecording = true;
   talkBtn.classList.add("recording");
   setStatus("listening", "Recording…");
