@@ -1,0 +1,10 @@
+flask>=3.0
+vosk>=0.3.45
+sounddevice>=0.4.6
+numpy>=1.24
+
+# Only installs/works on actual Raspberry Pi hardware.
+# On your PC, pip will simply skip/fail this line gracefully if you
+# install the rest individually — or just remove this line when
+# installing on PC. See README.md for per-platform install steps.
+RPi.GPIO>=0.7.1; platform_machine == "armv7l" or platform_machine == "aarch64"
