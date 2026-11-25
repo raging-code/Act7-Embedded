@@ -243,6 +243,6 @@ if __name__ == "__main__":
     try:
         # host="0.0.0.0" so you can also reach it from your phone/laptop
         # over the LAN when running on the Pi.
-        app.run(host="0.0.0.0", port=5000, debug=True)
+        app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
     finally:
         led_controller.cleanup()
