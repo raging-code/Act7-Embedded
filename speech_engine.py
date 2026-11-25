@@ -11,6 +11,10 @@ sounddevice/PyAudio picks that up automatically from the OS.
 Model used: vosk-model-small-en-us-0.15 (~40MB, good speed/accuracy
 balance for short voice commands on a Pi 5; also fine on a PC).
 
+Push-to-talk: start_recording() opens the mic when the button is pressed,
+stop_and_transcribe() closes it when the button is released and returns
+the text. Audio is only captured while the button is held.
+
 Setup (one-time, needs internet the FIRST time only):
     1. pip install vosk sounddevice
     2. Download & unzip the model into ./models/:
@@ -34,7 +38,9 @@ logger = logging.getLogger("speech_engine")
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "models", "vosk-model-small-en-us-0.15")
 MODEL_RATE = 16000  # Vosk's small English model expects 16 kHz audio
-RECORD_SECONDS = 4  # length of each push-to-talk capture
+RECORD_SECONDS = 4  # length of the fixed-length capture (listen_and_transcribe)
+MAX_RECORD_SECONDS = 15  # safety limit while the button is held
+MIN_RECORD_SECONDS = 0.3  # shorter than this is treated as an accidental tap
 
 # Restrict Vosk to the words our commands use. This makes recognition far
 # more accurate (no more "pain on anyone") because it can't pick other words.
@@ -42,11 +48,11 @@ GRAMMAR = json.dumps(
     ["turn switch on off led leds all and one two three", "[unk]"]
 )
 
-# Optional: force a specific mic by index, e.g.  MIC_DEVICE=2 python app.py
-# (list devices with: python -m sounddevice)
 # Last capture (what Vosk heard) is saved here so the web page can play it.
 LAST_CAPTURE_PATH = os.path.join(tempfile.gettempdir(), "act7_last_capture.wav")
 
+# Optional: force a specific mic by index, e.g.  MIC_DEVICE=2 python app.py
+# (list devices with: python -m sounddevice)
 MIC_DEVICE = int(os.environ["MIC_DEVICE"]) if os.environ.get("MIC_DEVICE") else None
 
 
@@ -78,6 +84,18 @@ class SpeechEngine:
         self._model = Model(model_path)
         logger.info("Vosk model loaded.")
 
+        # push-to-talk state
+        self._state_lock = threading.Lock()
+        self._recording = False
+        self._stream = None
+        self._chunks = []
+        self._chunks_lock = threading.Lock()
+        self._rate = MODEL_RATE
+        self._channels = 1
+        self._started_at = 0.0
+        self._timer = None
+
+    # ------------------------------------------------------------------ mic
     def _open_stream(self, callback):
         """
         Open the mic at a rate/channel count it actually supports.
@@ -110,43 +128,91 @@ class SpeechEngine:
                     last_err = e
         raise RuntimeError(f"Could not open microphone '{info['name']}': {last_err}")
 
+    # --------------------------------------------- hold-to-talk (press/release)
+    def start_recording(self):
+        """Called when the button is pressed: open the mic and start capturing."""
+        with self._state_lock:
+            if self._recording:
+                if time.time() - self._started_at > MAX_RECORD_SECONDS + 5:
+                    logger.warning("Discarding a stale recording that was never stopped.")
+                    self._discard_locked()
+                else:
+                    raise RuntimeError("Already recording.")
+
+            with self._chunks_lock:
+                self._chunks = []
+
+            def _callback(indata, frames, time_info, status):
+                if status:
+                    logger.warning("Audio input status: %s", status)
+                with self._chunks_lock:
+                    self._chunks.append(bytes(indata))
+
+            stream, rate, channels = self._open_stream(_callback)
+            stream.start()
+            self._stream, self._rate, self._channels = stream, rate, channels
+            self._started_at = time.time()
+            self._recording = True
+            # Safety: stop capturing (but keep the audio) if the button is held too long.
+            self._timer = threading.Timer(MAX_RECORD_SECONDS, self._halt_stream)
+            self._timer.daemon = True
+            self._timer.start()
+            logger.info("Recording started (hold the button, speak, then release)...")
+
+    def _halt_stream(self):
+        """Stop and close the mic stream. Keeps the captured audio."""
+        stream, self._stream = self._stream, None
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+        if stream is not None:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:
+                logger.exception("Error while closing the mic stream")
+
+    def _discard_locked(self):
+        self._halt_stream()
+        with self._chunks_lock:
+            self._chunks = []
+        self._recording = False
+
+    def stop_and_transcribe(self) -> str:
+        """Called when the button is released: stop capturing and transcribe."""
+        with self._state_lock:
+            if not self._recording:
+                raise RuntimeError("Not recording - press and hold the button first.")
+            self._halt_stream()
+            self._recording = False
+            with self._chunks_lock:
+                raw = b"".join(self._chunks)
+                self._chunks = []
+            rate, channels = self._rate, self._channels
+        return self._transcribe(raw, rate, channels)
+
+    # ------------------------------------------------ fixed-length (legacy)
     def listen_and_transcribe(self, seconds: int = RECORD_SECONDS) -> str:
-        """
-        Records `seconds` of audio from the microphone and returns the
-        transcribed text (lowercase, empty string if nothing understood).
-        """
-        if not _capture_lock.acquire(blocking=False):
-            raise RuntimeError("Already listening - wait for the current capture to finish.")
-        try:
-            return self._listen(seconds)
-        finally:
-            _capture_lock.release()
+        """Records a fixed number of seconds, then transcribes it."""
+        self.start_recording()
+        time.sleep(seconds)
+        return self.stop_and_transcribe()
 
-    def _listen(self, seconds: int) -> str:
-        chunks = []
-        lock = threading.Lock()
-
-        def _callback(indata, frames, time_info, status):
-            if status:
-                logger.warning("Audio input status: %s", status)
-            with lock:
-                chunks.append(bytes(indata))
-
-        stream, rate, channels = self._open_stream(_callback)
-        with stream:
-            logger.info("Listening for %s seconds...", seconds)
-            time.sleep(seconds)
-
-        with lock:
-            raw = b"".join(chunks)
+    # ---------------------------------------------------------- transcribing
+    def _transcribe(self, raw: bytes, rate: int, channels: int) -> str:
         audio = np.frombuffer(raw, dtype=np.int16)
         if channels > 1:
             audio = audio[: len(audio) - (len(audio) % channels)]
             audio = audio.reshape(-1, channels).mean(axis=1).astype(np.int16)
-        if audio.size == 0:
+        if audio.size == 0 or audio.size / rate < MIN_RECORD_SECONDS:
+            logger.info("Recording too short - ignored.")
             return ""
 
-        logger.info("Captured %.1fs, peak level %d / 32767", audio.size / rate, int(np.abs(audio).max()))
+        logger.info(
+            "Captured %.1fs, peak level %d / 32767",
+            audio.size / rate,
+            int(np.abs(audio).max()),
+        )
         audio = _to_model_rate(audio, rate)
 
         try:
@@ -175,14 +241,15 @@ class SpeechEngine:
         return final_text
 
 
-_capture_lock = threading.Lock()  # only one mic capture at a time
 _engine = None
+_engine_lock = threading.Lock()
 
 
 def get_speech_engine() -> SpeechEngine:
     """Lazily creates a single shared SpeechEngine (loading the model is slow,
     so we only want to do it once per process, not on every request)."""
     global _engine
-    if _engine is None:
-        _engine = SpeechEngine()
-    return _engine
+    with _engine_lock:
+        if _engine is None:
+            _engine = SpeechEngine()
+        return _engine

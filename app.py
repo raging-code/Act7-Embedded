@@ -143,6 +143,99 @@ def api_voice_command():
     )
 
 
+# ---------------------------------------------------------------------------
+# Hold-to-talk: the button press starts the mic, the release stops it and
+# returns the transcript.
+# ---------------------------------------------------------------------------
+import threading as _threading
+
+_warm_started = False
+
+
+@app.before_request
+def _warm_up_speech_model():
+    """Load the Vosk model in the background on the first request so the first
+    button press doesn't have to wait for it."""
+    global _warm_started
+    if _warm_started:
+        return
+    _warm_started = True
+
+    def _load():
+        try:
+            from speech_engine import get_speech_engine
+
+            get_speech_engine()
+        except Exception:
+            logger.exception("Speech engine warm-up failed")
+
+    _threading.Thread(target=_load, daemon=True).start()
+
+
+def _speech_engine_or_error():
+    try:
+        from speech_engine import get_speech_engine
+
+        return get_speech_engine(), None
+    except FileNotFoundError as e:
+        return None, (jsonify({"ok": False, "error": str(e)}), 500)
+    except OSError as e:
+        msg = (
+            "Audio input library not available on this machine "
+            f"({e}). On Linux/Raspberry Pi OS, install it with: "
+            "sudo apt install -y portaudio19-dev"
+        )
+        return None, (jsonify({"ok": False, "error": msg}), 500)
+
+
+@app.route("/api/record/start", methods=["POST"])
+def api_record_start():
+    engine, err = _speech_engine_or_error()
+    if err:
+        return err
+    try:
+        engine.start_recording()
+    except Exception as e:
+        logger.exception("Could not start recording")
+        return jsonify({"ok": False, "error": f"Microphone error: {e}"}), 500
+    return jsonify({"ok": True})
+
+
+@app.route("/api/record/stop", methods=["POST"])
+def api_record_stop():
+    engine, err = _speech_engine_or_error()
+    if err:
+        return err
+    try:
+        transcript = engine.stop_and_transcribe()
+    except Exception as e:
+        logger.exception("Voice capture/transcription failed")
+        return jsonify({"ok": False, "error": f"Microphone/transcription error: {e}"}), 500
+
+    if not transcript:
+        return jsonify({"ok": False, "transcript": "", "error": "No speech detected. Try again."})
+
+    command = parse_command(transcript)
+    if command is None:
+        return jsonify(
+            {
+                "ok": False,
+                "transcript": transcript,
+                "error": "Could not understand that as a command.",
+            }
+        )
+
+    led_controller.set_many(command["leds"], command["action"] == "on")
+    return jsonify(
+        {
+            "ok": True,
+            "transcript": transcript,
+            "command": command,
+            "leds": led_controller.get_states(),
+        }
+    )
+
+
 if __name__ == "__main__":
     try:
         # host="0.0.0.0" so you can also reach it from your phone/laptop
