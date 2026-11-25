@@ -19,7 +19,7 @@ button to issue voice commands like:
 
 import logging
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, send_file
 
 from command_parser import parse_command
 from gpio_controller import led_controller
@@ -61,6 +61,18 @@ def api_set_led(led_id, state):
     if not ok:
         return jsonify({"ok": False, "error": f"invalid LED id {led_id}"}), 400
     return jsonify({"ok": True, "leds": led_controller.get_states()})
+
+
+@app.route("/api/last-audio")
+def api_last_audio():
+    """The most recent mic capture, so you can hear what the app heard."""
+    try:
+        from speech_engine import LAST_CAPTURE_PATH
+        resp = send_file(LAST_CAPTURE_PATH, mimetype="audio/wav", max_age=0)
+    except (ImportError, OSError, FileNotFoundError):
+        return jsonify({"ok": False, "error": "No capture yet."}), 404
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/api/voice-command", methods=["POST"])

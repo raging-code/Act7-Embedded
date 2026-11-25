@@ -7,6 +7,7 @@ const talkBtn = document.getElementById("talk-btn");
 const statusLine = document.getElementById("status-line");
 const statusText = document.getElementById("status-text");
 const transcriptText = document.getElementById("transcript-text");
+const lastAudio = document.getElementById("last-audio");
 const connStatus = document.getElementById("conn-status");
 
 function setStatus(state, text) {
@@ -28,6 +29,11 @@ async function fetchStatus() {
   try {
     const res = await fetch("/api/status");
     const data = await res.json();
+
+    // Let the user hear exactly what the mic captured (cache-busted).
+    lastAudio.src = `/api/last-audio?t=${Date.now()}`;
+    lastAudio.onloadeddata = () => { lastAudio.hidden = false; };
+    lastAudio.onerror = () => { lastAudio.hidden = true; };
     renderLeds(data.leds);
     connStatus.textContent = "• connected";
   } catch (err) {

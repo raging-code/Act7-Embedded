@@ -21,8 +21,10 @@ Setup (one-time, needs internet the FIRST time only):
 import json
 import logging
 import os
+import tempfile
 import threading
 import time
+import wave
 
 import numpy as np
 import sounddevice as sd
@@ -42,6 +44,9 @@ GRAMMAR = json.dumps(
 
 # Optional: force a specific mic by index, e.g.  MIC_DEVICE=2 python app.py
 # (list devices with: python -m sounddevice)
+# Last capture (what Vosk heard) is saved here so the web page can play it.
+LAST_CAPTURE_PATH = os.path.join(tempfile.gettempdir(), "act7_last_capture.wav")
+
 MIC_DEVICE = int(os.environ["MIC_DEVICE"]) if os.environ.get("MIC_DEVICE") else None
 
 
@@ -143,6 +148,15 @@ class SpeechEngine:
 
         logger.info("Captured %.1fs, peak level %d / 32767", audio.size / rate, int(np.abs(audio).max()))
         audio = _to_model_rate(audio, rate)
+
+        try:
+            with wave.open(LAST_CAPTURE_PATH, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(MODEL_RATE)
+                w.writeframes(audio.tobytes())
+        except OSError as e:
+            logger.warning("Could not save last capture: %s", e)
 
         recognizer = KaldiRecognizer(self._model, MODEL_RATE, GRAMMAR)
         final_text = ""

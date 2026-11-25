@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice LED Control — Raspberry Pi</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+  <div class="scanline-overlay" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="topbar-id">
+      <span class="dot {{ 'dot-hw' if is_hardware else 'dot-mock' }}"></span>
+      <span class="topbar-label">VOICE-LED-CTL</span>
+    </div>
+    <div class="topbar-mode">
+      {% if is_hardware %}
+        RUNNING ON RASPBERRY PI &middot; GPIO ACTIVE
+      {% else %}
+        DEV MODE &middot; GPIO SIMULATED
+      {% endif %}
+    </div>
+  </header>
+
+  <main class="stage">
+
+    <section class="panel mic-panel">
+      <div class="panel-head">
+        <h1>Voice Command</h1>
+        <p class="panel-sub">Offline recognition &middot; Vosk engine &middot; no internet required</p>
+      </div>
+
+      <button id="talk-btn" class="talk-btn" type="button">
+        <svg class="mic-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M19 11a7 7 0 0 1-14 0M12 18v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span class="talk-label">HOLD TO SPEAK</span>
+      </button>
+
+      <div id="status-line" class="status-line" data-state="idle">
+        <span class="status-dot"></span>
+        <span id="status-text">Ready</span>
+      </div>
+
+      <div class="transcript-box">
+        <div class="transcript-label">Last transcript</div>
+        <div id="transcript-text" class="transcript-text">&mdash;</div>
+      </div>
+
+      <div class="command-ref">
+        <div class="command-ref-label">Recognized phrases</div>
+        <ul>
+          <li><code>turn on led 1</code></li>
+          <li><code>turn off led 2</code></li>
+          <li><code>turn on led 1 and led 2</code></li>
+          <li><code>turn off all leds</code></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="panel board-panel">
+      <div class="panel-head">
+        <h1>GPIO Output</h1>
+        <p class="panel-sub">BCM pins 17 &middot; 27 &middot; 22</p>
+      </div>
+
+      <div class="board">
+        <div class="led-slot" data-led="1">
+          <div class="led-bulb" id="bulb-1"></div>
+          <div class="led-meta">
+            <span class="led-name">LED 1</span>
+            <span class="led-pin">GPIO17</span>
+          </div>
+          <div class="led-controls">
+            <button class="mini-btn on" data-led="1" data-state="on">ON</button>
+            <button class="mini-btn off" data-led="1" data-state="off">OFF</button>
+          </div>
+        </div>
+
+        <div class="led-slot" data-led="2">
+          <div class="led-bulb" id="bulb-2"></div>
+          <div class="led-meta">
+            <span class="led-name">LED 2</span>
+            <span class="led-pin">GPIO27</span>
+          </div>
+          <div class="led-controls">
+            <button class="mini-btn on" data-led="2" data-state="on">ON</button>
+            <button class="mini-btn off" data-led="2" data-state="off">OFF</button>
+          </div>
+        </div>
+
+        <div class="led-slot" data-led="3">
+          <div class="led-bulb" id="bulb-3"></div>
+          <div class="led-meta">
+            <span class="led-name">LED 3</span>
+            <span class="led-pin">GPIO22</span>
+          </div>
+          <div class="led-controls">
+            <button class="mini-btn on" data-led="3" data-state="on">ON</button>
+            <button class="mini-btn off" data-led="3" data-state="off">OFF</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="board-footer">
+        <button id="all-on" class="bulk-btn" type="button">ALL ON</button>
+        <button id="all-off" class="bulk-btn" type="button">ALL OFF</button>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer-strip">
+    <span>EMBEDDED SYSTEMS LAB &middot; ACTIVITY 7</span>
+    <span id="conn-status">&bull; connected</span>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
