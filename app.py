@@ -21,7 +21,7 @@ import logging
 
 from flask import Flask, jsonify, render_template, send_file
 
-from command_parser import parse_command
+from command_parser import clean_transcript, parse_command
 from gpio_controller import led_controller
 
 logging.basicConfig(
@@ -215,7 +215,9 @@ def api_record_stop():
     if not transcript:
         return jsonify({"ok": False, "transcript": "", "error": "No speech detected. Try again."})
 
-    command = parse_command(transcript)
+    raw_transcript = transcript
+    transcript = clean_transcript(raw_transcript)
+    command = parse_command(raw_transcript)
     if command is None:
         return jsonify(
             {
@@ -230,6 +232,7 @@ def api_record_stop():
         {
             "ok": True,
             "transcript": transcript,
+            "raw_transcript": raw_transcript,
             "command": command,
             "leds": led_controller.get_states(),
         }

@@ -79,3 +79,20 @@ def parse_command(text: str):
         return None
 
     return {"action": action, "leds": leds}
+
+
+_CANONICAL = {"won": "one", "to": "two", "too": "two", "tree": "three", "free": "three"}
+
+
+def clean_transcript(text: str) -> str:
+    """Human-readable version of what Vosk heard, e.g.
+    'turn off el e ee d won and two' -> 'turn off led one and two'."""
+    if not text:
+        return ""
+    text = _normalize(text)
+    parts = re.split(r"\b(on|off)\b", text, maxsplit=1)
+    if len(parts) == 3:
+        head, act, tail = parts
+        tail = re.sub(r"\b(won|too|to|tree|free)\b", lambda m: _CANONICAL[m.group(1)], tail)
+        text = f"{head}{act}{tail}"
+    return re.sub(r"\s+", " ", text).strip()
