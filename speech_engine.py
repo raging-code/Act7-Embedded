@@ -44,8 +44,17 @@ MIN_RECORD_SECONDS = 0.3  # shorter than this is treated as an accidental tap
 
 # Restrict Vosk to the words our commands use. This makes recognition far
 # more accurate (no more "pain on anyone") because it can't pick other words.
+# "LED" is usually SAID as letters (L-E-D), which Vosk hears as "l e d" /
+# "el e d" / "el ee dee", or as look-alike words (led, lead, let, red...).
+# All of those variants must be allowed here, or Vosk outputs [unk].
 GRAMMAR = json.dumps(
-    ["turn switch on off led leds all and one two three", "[unk]"]
+    [
+        "turn switch on off all and",
+        "led leds lead leads let red ed lid lit lad",
+        "l el e ee d dee",
+        "one won two to too three tree free",
+        "[unk]",
+    ]
 )
 
 # Last capture (what Vosk heard) is saved here so the web page can play it.

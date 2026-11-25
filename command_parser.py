@@ -23,6 +23,7 @@ NUMBER_WORDS = {
     "one": 1, "two": 2, "three": 3,
     "won": 1,   # common mis-hearing of "one"
     "to": 2, "too": 2,  # common mis-hearings of "two"
+    "tree": 3, "free": 3,  # common mis-hearings of "three"
 }
 
 VALID_LEDS = {1, 2, 3}
@@ -31,7 +32,12 @@ VALID_LEDS = {1, 2, 3}
 def _normalize(text: str) -> str:
     text = text.lower().strip()
     # Normalize common mis-hearings of "led" from offline STT engines
-    text = re.sub(r"\b(lead|let|red)\b", "led", text)
+    # "LED" spoken as letters. Vosk splits it unpredictably: "l e d",
+    # "el e d", "el e ee d", "el ee dee"... Any run of letter sounds that
+    # starts with l/el and ends with d/dee becomes "led".
+    text = re.sub(r"\b(?:el|l)\.?(?:\s+(?:ee|e|el|l)\.?)*\s+(?:dee|d)\b\.?", "led", text)
+    text = re.sub(r"\b(leads|leds|lids|lits|lads)\b", "leds", text)
+    text = re.sub(r"\b(lead|let|red|ed|lid|lit|lad)\b", "led", text)
     return text
 
 
@@ -58,15 +64,15 @@ def parse_command(text: str):
     if "all" in text:
         return {"action": action, "leds": sorted(VALID_LEDS)}
 
-    # Extract numeric LED references: "led 1", "led1", "led 2"
-    leds = set(int(n) for n in re.findall(r"led\s*(\d+)", text))
-
-    # Extract spelled-out LED references: "led one", "led two"
-    for word, num in NUMBER_WORDS.items():
-        if re.search(rf"\bled\s+{word}\b", text):
-            leds.add(num)
-
-    # Keep only valid LED ids (1-3 in this setup)
+    # Collect every number said after "on"/"off": digits or number words.
+    # Handles "led one and led two", "led two and three", "one and two".
+    after = re.split(r"\b(?:on|off)\b", text, maxsplit=1)[-1]
+    leds = set()
+    for tok in re.findall(r"\d+|[a-z]+", after):
+        if tok.isdigit():
+            leds.add(int(tok))
+        elif tok in NUMBER_WORDS:
+            leds.add(NUMBER_WORDS[tok])
     leds = sorted(l for l in leds if l in VALID_LEDS)
 
     if not leds:
